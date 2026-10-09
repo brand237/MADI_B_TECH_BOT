@@ -1,84 +1,40 @@
 import os
 import re
-import httpx
+import asyncio
 from quart import Quart, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
+import yt_dlp
 
 TOKEN = os.environ.get("BOT_TOKEN", "8881509600:AAE1mehCUT2Op7G52iHiDrYBlH_2jLwM5Co")
 WEBHOOK_URL = "https://madi-b-tech-bot.onrender.com/webhook"
 
 app = Quart(__name__)
 
-# Initialisation de l'application Telegram
 telegram_app = Application.builder().token(TOKEN).build()
 
 async def start(update, context):
     await update.message.reply_text("Bonjour ! Envoyez-moi un lien TikTok et je vous renverrai la vidéo sans filigrane.")
 
-async def resolve_tiktok_url(url: str) -> str:
-    """Résout les liens courts (vt.tiktok.com, vm.tiktok.com) vers l'URL canonique complète."""
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+def extract_with_ytdlp(url: str) -> str:
+    """Extrait l'URL directe du fichier vidéo MP4 via yt-dlp."""
+    ydl_opts = {
+        'format': 'best',
+        'quiet': True,
+        'no_warnings': True,
     }
-    try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
-            response = await client.get(url, headers=headers)
-            return str(response.url)
-    except Exception as e:
-        print(f"Erreur de résolution d'URL : {e}")
-        return url
-
-async def fetch_tikwm(url: str):
-    """Méthode 1 : TikWM API"""
-    api_url = "https://www.tikwm.com/api/"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
-    }
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            res = await client.post(api_url, headers=headers, data={"url": url, "hd": 1})
-            if res.status_code == 200:
-                data = res.json()
-                if data.get("code") == 0 and "data" in data:
-                    return data["data"].get("play") or data["data"].get("hdplay")
-        except Exception as e:
-            print(f"Erreur TikWM: {e}")
-    return None
-
-async def fetch_lovetik(url: str):
-    """Méthode 2 : API alternative (LoveTik)"""
-    api_url = "https://lovetik.com/api/ajax/search"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
-    }
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            res = await client.post(api_url, headers=headers, data={"query": url})
-            if res.status_code == 200:
-                data = res.json()
-                if data.get("status") == "ok" and "links" in data:
-                    for item in data["links"]:
-                        if "a" in item and "href" in item:
-                            return item["href"]
-        except Exception as e:
-            print(f"Erreur LoveTik: {e}")
-    return None
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+        return info.get('url')
 
 async def download_tiktok_video(url: str):
-    final_url = await resolve_tiktok_url(url)
-    
-    video_url = await fetch_tikwm(final_url)
-    if video_url:
+    try:
+        # Exécution de yt-dlp dans un thread séparé pour ne pas bloquer Quart
+        video_url = await asyncio.to_thread(extract_with_ytdlp, url)
         return video_url
-        
-    video_url = await fetch_lovetik(final_url)
-    if video_url:
-        return video_url
-
-    return None
+    except Exception as e:
+        print(f"Erreur yt-dlp : {e}")
+        return None
 
 async def handle_tiktok(update, context):
     text = update.message.text
@@ -86,7 +42,7 @@ async def handle_tiktok(update, context):
     
     if tiktok_match:
         clean_url = tiktok_match.group(0)
-        msg = await update.message.reply_text("⏳ Extraction de la vidéo sans filigrane...")
+        msg = await update.message.reply_text("⏳ Extraction de la vidéo avec yt-dlp...")
         
         video_url = await download_tiktok_video(clean_url)
         
@@ -95,7 +51,7 @@ async def handle_tiktok(update, context):
             await update.message.reply_video(video=video_url, caption="Voici votre vidéo sans filigrane ! 🎬")
             await msg.delete()
         else:
-            await msg.edit_text("❌ Impossible de récupérer la vidéo. Assurez-vous que la vidéo est publique.")
+            await msg.edit_text("❌ Impossible de récupérer la vidéo. Assurez-vous que le lien est valide.")
     else:
         await update.message.reply_text("Veuillez envoyer un lien TikTok valide.")
 
