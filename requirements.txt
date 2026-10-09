@@ -1,4 +1,4 @@
 quart
 uvicorn
 python-telegram-bot
-yt-dlp
+httpx
