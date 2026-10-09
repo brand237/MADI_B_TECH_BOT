@@ -1,30 +1,61 @@
 import os
 import asyncio
+import requests
 from flask import Flask, request
 from telegram import Update
-from telegram.ext import Application, CommandHandler
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
-# Token de votre bot Telegram (récupéré depuis @BotFather)
-TOKEN = os.environ.get("BOT_TOKEN", "8881509600:AAE1mehCUT2Op7G52iHiDrYBlH_2jLwM5Co")
+# Configuration Token et Webhook
+TOKEN = os.environ.get("BOT_TOKEN", "VOTRE_TOKEN_TELEGRAM_ICI")
 WEBHOOK_URL = "https://madi-b-tech-bot.onrender.com/webhook"
 
 app = Flask(__name__)
 
-# Initialisation de la boucle d'événements asyncio globale
+# Initialisation de la boucle d'événements asyncio
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
-# Initialisation de l'application python-telegram-bot
+# Initialisation du bot Telegram
 telegram_app = Application.builder().token(TOKEN).build()
-
-# Initialiser l'application Telegram une seule fois au démarrage
 loop.run_until_complete(telegram_app.initialize())
 
-# Commande /start
 async def start(update, context):
-    await update.message.reply_text("Bonjour ! Le bot fonctionne parfaitement en Webhook.")
+    await update.message.reply_text("Bonjour ! Envoyez-moi un lien TikTok et je vous renverrai la vidéo sans filigrane.")
 
+async def download_tiktok_video(url: str):
+    """Récupère l'URL de la vidéo sans filigrane via l'API TikWM."""
+    api_url = "https://www.tikwm.com/api/"
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    data = {"url": url, "hd": 1}
+    
+    response = requests.post(api_url, headers=headers, data=data)
+    if response.status_code == 200:
+        res_json = response.json()
+        if res_json.get("code") == 0:
+            # Lien direct de la vidéo sans filigrane
+            video_url = res_json["data"]["play"]
+            return video_url
+    return None
+
+async def handle_tiktok(update, context):
+    text = update.message.text
+    if "tiktok.com" in text:
+        msg = await update.message.reply_text("⏳ Téléchargement de la vidéo sans filigrane en cours...")
+        
+        video_url = await download_tiktok_video(text)
+        
+        if video_url:
+            # Envoie la vidéo directement sur Telegram
+            await update.message.reply_video(video=video_url, caption="Voici votre vidéo sans filigrane ! 🎬")
+            await msg.delete()
+        else:
+            await msg.edit_text("❌ Impossible de récupérer la vidéo. Vérifiez le lien fourni.")
+    else:
+        await update.message.reply_text("Veuillez m'envoyer un lien TikTok valide.")
+
+# Enregistrement des gestionnaires de commandes et messages
 telegram_app.add_handler(CommandHandler("start", start))
+telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_tiktok))
 
 @app.route('/')
 def index():
@@ -32,17 +63,13 @@ def index():
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """Point d'entrée où Telegram envoie les messages reçus."""
     json_data = request.get_json(force=True)
     update = Update.de_json(json_data, telegram_app.bot)
-    
-    # Traitement de la mise à jour sur la boucle principale
     loop.run_until_complete(telegram_app.process_update(update))
     return "OK", 200
 
 @app.route('/set_webhook', methods=['GET'])
 def set_webhook():
-    """Route pour lier automatiquement votre URL Render à Telegram."""
     async def _set():
         return await telegram_app.bot.set_webhook(WEBHOOK_URL)
     
