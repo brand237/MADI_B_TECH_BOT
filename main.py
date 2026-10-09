@@ -1,5 +1,6 @@
 import os
-import requests
+import re
+import httpx
 from quart import Quart, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
@@ -9,45 +10,58 @@ WEBHOOK_URL = "https://madi-b-tech-bot.onrender.com/webhook"
 
 app = Quart(__name__)
 
-# Initialisation de l'application Telegram
 telegram_app = Application.builder().token(TOKEN).build()
 
 async def start(update, context):
     await update.message.reply_text("Bonjour ! Envoyez-moi un lien TikTok et je vous renverrai la vidéo sans filigrane.")
 
-def download_tiktok_video(url: str):
-    """Récupère l'URL de la vidéo sans filigrane via l'API TikWM."""
+async def download_tiktok_video(url: str):
+    """Résout l'URL TikTok et récupère le lien sans filigrane via TikWM."""
     api_url = "https://www.tikwm.com/api/"
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    data = {"url": url, "hd": 1}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+    }
     
-    response = requests.post(api_url, headers=headers, data=data)
-    if response.status_code == 200:
-        res_json = response.json()
-        if res_json.get("code") == 0:
-            return res_json["data"]["play"]
+    async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
+        try:
+            # Étape 1 : Résoudre le lien court (vt.tiktok.com) vers l'URL canonique
+            response = await client.post(api_url, headers=headers, data={"url": url, "hd": 1})
+            if response.status_code == 200:
+                res_json = response.json()
+                if res_json.get("code") == 0 and "data" in res_json:
+                    # Préfère la HD si disponible, sinon la SD sans filigrane
+                    data = res_json["data"]
+                    return data.get("hdplay") or data.get("play")
+        except Exception as e:
+            print(f"Erreur extraction TikTok : {e}")
     return None
 
 async def handle_tiktok(update, context):
     text = update.message.text
-    if "tiktok.com" in text:
-        msg = await update.message.reply_text("⏳ Téléchargement de la vidéo sans filigrane en cours...")
-        video_url = download_tiktok_video(text)
+    # Expression régulière pour détecter n'importe quel lien TikTok
+    tiktok_match = re.search(r'https?://[^\s]*tiktok\.com[^\s]*', text)
+    
+    if tiktok_match:
+        clean_url = tiktok_match.group(0)
+        msg = await update.message.reply_text("⏳ Extraction de la vidéo sans filigrane...")
+        
+        video_url = await download_tiktok_video(clean_url)
         
         if video_url:
+            await msg.edit_text("🚀 Envoi de la vidéo...")
             await update.message.reply_video(video=video_url, caption="Voici votre vidéo sans filigrane ! 🎬")
             await msg.delete()
         else:
-            await msg.edit_text("❌ Impossible de récupérer la vidéo. Vérifiez le lien fourni.")
+            await msg.edit_text("❌ Impossible de récupérer la vidéo. Assurez-vous que la vidéo est publique et que le lien est valide.")
     else:
-        await update.message.reply_text("Veuillez m'envoyer un lien TikTok valide.")
+        await update.message.reply_text("Veuillez m'envoyer un lien TikTok valide (ex: https://vt.tiktok.com/...).")
 
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_tiktok))
 
 @app.before_serving
 async def startup():
-    """Initialise le bot Telegram au démarrage du serveur."""
     await telegram_app.initialize()
 
 @app.route('/')
