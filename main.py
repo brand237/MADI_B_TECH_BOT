@@ -1,18 +1,22 @@
 import os
 import threading
+import requests
 from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-import requests
 
-# 1. Serveur Web Flask pour satisfaire le plan gratuit Render
+# 1. Configuration du serveur Web Flask
 app = Flask(__name__)
 
 @app.route('/')
 def home():
     return "MBT_Tikfast Bot is running 24/7!"
 
-# 2. Logique du Bot Telegram
+def run_flask():
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+
+# 2. Logic du Bot Telegram
 TOKEN = os.environ.get("TOKEN")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -46,15 +50,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await status_msg.edit_text("Une erreur est survenue lors du traitement.")
 
-def run_bot():
+if __name__ == "__main__":
+    # Lancement du serveur Flask dans un thread secondaire
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+
+    # Lancement du bot Telegram sur le thread principal
     tg_app = ApplicationBuilder().token(TOKEN).build()
     tg_app.add_handler(CommandHandler("start", start))
     tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     tg_app.run_polling()
-
-if __name__ == "__main__":
-    # Lancement du bot Telegram dans un thread séparé
-    threading.Thread(target=run_bot, daemon=True).start()
-    # Lancement du serveur Web Flask
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
