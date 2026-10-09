@@ -1,5 +1,7 @@
 import os
 import logging
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import requests
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -11,8 +13,19 @@ logging.basicConfig(
     level=logging.INFO
 )
 
+# Serviteur HTTP minimaliste pour satisfaire la verification de port de Render
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+def run_dummy_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    server.serve_forever()
+
 def resolve_url(url: str) -> str:
-    """Suit les redirections pour obtenir l'URL finale (utile pour vt.tiktok.com)."""
     try:
         session = requests.Session()
         session.headers.update({
@@ -25,7 +38,6 @@ def resolve_url(url: str) -> str:
         return url
 
 def get_video_url_tikwm(url: str):
-    """Méthode 1 : TikWM API avec headers navigateur."""
     try:
         session = requests.Session()
         headers = {
@@ -35,7 +47,6 @@ def get_video_url_tikwm(url: str):
         }
         res = session.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=10)
         
-        # Vérifie si la réponse est du JSON valide
         if res.status_code == 200 and res.text.startswith('{'):
             data = res.json()
             if data.get("code") == 0:
@@ -48,7 +59,6 @@ def get_video_url_tikwm(url: str):
     return None
 
 def get_video_url_cobalt(url: str):
-    """Méthode 2 de secours : Cobalt API (contourne les blocages d'IP Cloud)."""
     try:
         headers = {
             "Accept": "application/json",
@@ -80,13 +90,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_msg = await update.message.reply_text("Downloading video, please wait...")
 
     try:
-        # 1. Résolution de l'URL finale (liens courts vt.tiktok.com)
         full_url = resolve_url(raw_url)
-
-        # 2. Essai via TikWM
         play_url = get_video_url_tikwm(full_url)
         
-        # 3. Secours via Cobalt si TikWM est bloqué sur Render
         if not play_url:
             play_url = get_video_url_cobalt(full_url)
 
@@ -105,8 +111,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_msg.edit_text("An error occurred while processing your request.")
 
 if __name__ == '__main__':
-    app = ApplicationBuilder().token(TOKEN).build()
+    # Lancement du serveur Web factice dans un thread separe pour Render
+    threading.Thread(target=run_dummy_server, daemon=True).start()
     
+    app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
