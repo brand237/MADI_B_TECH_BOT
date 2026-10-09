@@ -28,31 +28,59 @@ async def resolve_tiktok_url(url: str) -> str:
         print(f"Erreur de résolution d'URL : {e}")
         return url
 
-async def download_tiktok_video(url: str):
-    """Obtient le lien direct vidéo sans filigrane via l'API TikWM."""
-    # 1. Résolution préalable de l'URL finale
-    final_url = await resolve_tiktok_url(url)
-    
+async def fetch_tikwm(url: str):
+    """Méthode 1 : TikWM API"""
     api_url = "https://www.tikwm.com/api/"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
     }
-    
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            response = await client.post(api_url, headers=headers, data={"url": final_url, "hd": 1})
-            if response.status_code == 200:
-                res_json = response.json()
-                if res_json.get("code") == 0 and "data" in res_json:
-                    data = res_json["data"]
-                    # Privilégie le lien vidéo standard sans watermark ou HD
-                    return data.get("play") or data.get("hdplay")
-                else:
-                    print(f"Réponse TikWM : {res_json.get('msg')}")
+            res = await client.post(api_url, headers=headers, data={"url": url, "hd": 1})
+            if res.status_code == 200:
+                data = res.json()
+                if data.get("code") == 0 and "data" in data:
+                    return data["data"].get("play") or data["data"].get("hdplay")
         except Exception as e:
-            print(f"Erreur requête TikWM : {e}")
-            
+            print(f"Erreur TikWM: {e}")
+    return None
+
+async def fetch_lovetik(url: str):
+    """Méthode 2 : API alternative (LoveTik/Locket)"""
+    api_url = "https://lovetik.com/api/ajax/search"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            res = await client.post(api_url, headers=headers, data={"query": url})
+            if res.status_code == 200:
+                data = res.json()
+                if data.get("status") == "ok" and "links" in data:
+                    # Recherche du premier lien sans watermark (.mp4)
+                    for item in data["links"]:
+                        if "a" in item and "href" in item:
+                            return item["href"]
+        except Exception as e:
+            print(f"Erreur LoveTik: {e}")
+    return None
+
+async def download_tiktok_video(url: str):
+    # 1. Résolution du lien court vers le lien complet
+    final_url = await resolve_tiktok_url(url)
+    
+    # 2. Essai avec TikWM
+    video_url = await fetch_tikwm(final_url)
+    if video_url:
+        return video_url
+        
+    # 3. Secours avec LoveTik en cas d'échec de TikWM
+    video_url = await fetch_lovetik(final_url)
+    if video_url:
+        return video_url
+
     return None
 
 async def handle_tiktok(update, context):
@@ -61,7 +89,7 @@ async def handle_tiktok(update, context):
     
     if tiktok_match:
         clean_url = tiktok_match.group(0)
-        msg = await update.message.reply_text("⏳ Traitement du lien et extraction de la vidéo...")
+        msg = await update.message.reply_text("⏳ Extraction de la vidéo sans filigrane...")
         
         video_url = await download_tiktok_video(clean_url)
         
@@ -70,7 +98,7 @@ async def handle_tiktok(update, context):
             await update.message.reply_video(video=video_url, caption="Voici votre vidéo sans filigrane ! 🎬")
             await msg.delete()
         else:
-            await msg.edit_text("❌ Impossible de récupérer la vidéo. Assurez-vous que le lien est valide et que la vidéo n'est pas privée.")
+            await msg.edit_text("❌ Impossible de récupérer la vidéo. Assurez-vous que la vidéo est publique.")
     else:
         await update.message.reply_text("Veuillez envoyer un lien TikTok valide.")
 
