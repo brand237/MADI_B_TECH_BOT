@@ -15,47 +15,64 @@ telegram_app = Application.builder().token(TOKEN).build()
 async def start(update, context):
     await update.message.reply_text("Bonjour ! Envoyez-moi un lien TikTok et je vous renverrai la vidéo sans filigrane.")
 
+async def resolve_tiktok_url(url: str) -> str:
+    """Résout les liens courts (vt.tiktok.com, vm.tiktok.com) vers l'URL canonique complète."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
+            response = await client.get(url, headers=headers)
+            return str(response.url)
+    except Exception as e:
+        print(f"Erreur de résolution d'URL : {e}")
+        return url
+
 async def download_tiktok_video(url: str):
-    """Résout l'URL TikTok et récupère le lien sans filigrane via TikWM."""
+    """Obtient le lien direct vidéo sans filigrane via l'API TikWM."""
+    # 1. Résolution préalable de l'URL finale
+    final_url = await resolve_tiktok_url(url)
+    
     api_url = "https://www.tikwm.com/api/"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
     }
     
-    async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
+    async with httpx.AsyncClient(timeout=15.0) as client:
         try:
-            # Étape 1 : Résoudre le lien court (vt.tiktok.com) vers l'URL canonique
-            response = await client.post(api_url, headers=headers, data={"url": url, "hd": 1})
+            response = await client.post(api_url, headers=headers, data={"url": final_url, "hd": 1})
             if response.status_code == 200:
                 res_json = response.json()
                 if res_json.get("code") == 0 and "data" in res_json:
-                    # Préfère la HD si disponible, sinon la SD sans filigrane
                     data = res_json["data"]
-                    return data.get("hdplay") or data.get("play")
+                    # Privilégie le lien vidéo standard sans watermark ou HD
+                    return data.get("play") or data.get("hdplay")
+                else:
+                    print(f"Réponse TikWM : {res_json.get('msg')}")
         except Exception as e:
-            print(f"Erreur extraction TikTok : {e}")
+            print(f"Erreur requête TikWM : {e}")
+            
     return None
 
 async def handle_tiktok(update, context):
     text = update.message.text
-    # Expression régulière pour détecter n'importe quel lien TikTok
     tiktok_match = re.search(r'https?://[^\s]*tiktok\.com[^\s]*', text)
     
     if tiktok_match:
         clean_url = tiktok_match.group(0)
-        msg = await update.message.reply_text("⏳ Extraction de la vidéo sans filigrane...")
+        msg = await update.message.reply_text("⏳ Traitement du lien et extraction de la vidéo...")
         
         video_url = await download_tiktok_video(clean_url)
         
         if video_url:
-            await msg.edit_text("🚀 Envoi de la vidéo...")
+            await msg.edit_text("🚀 Envoi de la vidéo en cours...")
             await update.message.reply_video(video=video_url, caption="Voici votre vidéo sans filigrane ! 🎬")
             await msg.delete()
         else:
-            await msg.edit_text("❌ Impossible de récupérer la vidéo. Assurez-vous que la vidéo est publique et que le lien est valide.")
+            await msg.edit_text("❌ Impossible de récupérer la vidéo. Assurez-vous que le lien est valide et que la vidéo n'est pas privée.")
     else:
-        await update.message.reply_text("Veuillez m'envoyer un lien TikTok valide (ex: https://vt.tiktok.com/...).")
+        await update.message.reply_text("Veuillez envoyer un lien TikTok valide.")
 
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_tiktok))
