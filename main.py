@@ -10,6 +10,7 @@ WEBHOOK_URL = "https://madi-b-tech-bot.onrender.com/webhook"
 
 app = Quart(__name__)
 
+# Initialisation de l'application Telegram
 telegram_app = Application.builder().token(TOKEN).build()
 
 async def start(update, context):
@@ -47,7 +48,7 @@ async def fetch_tikwm(url: str):
     return None
 
 async def fetch_lovetik(url: str):
-    """Méthode 2 : API alternative (LoveTik/Locket)"""
+    """Méthode 2 : API alternative (LoveTik)"""
     api_url = "https://lovetik.com/api/ajax/search"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -59,7 +60,6 @@ async def fetch_lovetik(url: str):
             if res.status_code == 200:
                 data = res.json()
                 if data.get("status") == "ok" and "links" in data:
-                    # Recherche du premier lien sans watermark (.mp4)
                     for item in data["links"]:
                         if "a" in item and "href" in item:
                             return item["href"]
@@ -68,15 +68,12 @@ async def fetch_lovetik(url: str):
     return None
 
 async def download_tiktok_video(url: str):
-    # 1. Résolution du lien court vers le lien complet
     final_url = await resolve_tiktok_url(url)
     
-    # 2. Essai avec TikWM
     video_url = await fetch_tikwm(final_url)
     if video_url:
         return video_url
         
-    # 3. Secours avec LoveTik en cas d'échec de TikWM
     video_url = await fetch_lovetik(final_url)
     if video_url:
         return video_url
@@ -131,6 +128,3 @@ async def set_webhook():
     if success:
         return "Webhook activé avec succès sur Telegram !", 200
     return "Échec de la configuration du webhook.", 500
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
