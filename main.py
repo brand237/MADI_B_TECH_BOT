@@ -1,21 +1,37 @@
-import threading
-from flask import Flask
-# Importez votre bot Telegram ici (ex: de telegram.ext import Application...)
+import os
+from flask import Flask, request
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
+
+TOKEN = os.environ.get("BOT_TOKEN")  # Ou mettez votre token Telegram directement
+WEBHOOK_URL = "https://madi-b-tech-bot.onrender.com/webhook"
 
 app = Flask(__name__)
 
+# Initialisation de l'application Telegram
+telegram_app = Application.builder().token(TOKEN).build()
+
+async def start(update, context):
+    await update.message.reply_text("Bonjour ! Le bot est en ligne.")
+
+telegram_app.add_handler(CommandHandler("start", start))
+
 @app.route('/')
-def home():
-    return "Bot is running!"
+def index():
+    return "Bot en ligne !"
 
-def run_telegram_bot():
-    # Placez le code d'initialisation et d'exécution de votre bot ici
-    # Exemple: application.run_polling()
-    pass
+@app.route('/webhook', methods=['POST'])
+async def webhook():
+    """Reçoit les mises à jour de Telegram"""
+    json_str = request.get_data().decode('UTF-8')
+    update = Update.de_json(eval(json_str), telegram_app.bot)
+    await telegram_app.process_update(update)
+    return "OK", 200
 
-# Démarre le bot sur un thread séparé pour ne pas bloquer Gunicorn
-bot_thread = threading.Thread(target=run_telegram_bot, daemon=True)
-bot_thread.start()
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+# Endpoint pour enregistrer le webhook auprès de Telegram
+@app.route('/set_webhook', methods=['GET'])
+async def set_webhook():
+    success = await telegram_app.bot.set_webhook(WEBHOOK_URL)
+    if success:
+        return "Webhook configuré avec succès !"
+    return "Échec de la configuration du webhook", 500
