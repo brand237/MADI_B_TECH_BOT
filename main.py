@@ -1,11 +1,12 @@
 import os
 import re
-import httpx
+import asyncio
 from quart import Quart, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
+import yt_dlp
 
-TOKEN = os.environ.get("BOT_TOKEN", "VOTRE_TOKEN_TELEGRAM_ICI")
+TOKEN = os.environ.get("BOT_TOKEN", "8881509600:AAE1mehCUT2Op7G52iHiDrYBlH_2jLwM5Co")
 WEBHOOK_URL = "https://madi-b-tech-bot.onrender.com/webhook"
 
 app = Quart(__name__)
@@ -14,60 +15,22 @@ telegram_app = Application.builder().token(TOKEN).build()
 async def start(update, context):
     await update.message.reply_text("Bonjour ! Envoyez-moi un lien TikTok et je vous renverrai la vidéo sans filigrane.")
 
-async def fetch_cobalt(url: str):
-    """Méthode 1 : API Cobalt.tools (Extrêmement fiable sur les IPs cloud)"""
-    api_url = "https://api.cobalt.tools/api/json"
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+def download_tiktok_local(url: str, output_path: str) -> bool:
+    """Télécharge la vidéo TikTok directement sur le disque du serveur."""
+    ydl_opts = {
+        'format': 'bestvideo+bestaudio/best',
+        'outtmpl': output_path,
+        'quiet': True,
+        'no_warnings': True,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     }
-    payload = {
-        "url": url,
-        "vCodec": "h264",
-        "noWatermark": True
-    }
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        try:
-            res = await client.post(api_url, headers=headers, json=payload)
-            if res.status_code == 200:
-                data = res.json()
-                if data.get("status") in ["stream", "redirect"]:
-                    return data.get("url")
-        except Exception as e:
-            print(f"Erreur Cobalt: {e}")
-    return None
-
-async def fetch_tikwm(url: str):
-    """Méthode 2 : TikWM API avec en-têtes modifiés"""
-    api_url = "https://www.tikwm.com/api/"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
-        "Accept": "*/*"
-    }
-    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-        try:
-            res = await client.post(api_url, headers=headers, data={"url": url, "hd": 1})
-            if res.status_code == 200:
-                data = res.json()
-                if data.get("code") == 0 and "data" in data:
-                    return data["data"].get("play") or data["data"].get("hdplay")
-        except Exception as e:
-            print(f"Erreur TikWM: {e}")
-    return None
-
-async def download_tiktok_video(url: str):
-    # 1. Tentative avec Cobalt API
-    video_url = await fetch_cobalt(url)
-    if video_url:
-        return video_url
-        
-    # 2. Secours avec TikWM
-    video_url = await fetch_tikwm(url)
-    if video_url:
-        return video_url
-
-    return None
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+        return os.path.exists(output_path)
+    except Exception as e:
+        print(f"Erreur téléchargement yt-dlp : {e}")
+        return False
 
 async def handle_tiktok(update, context):
     text = update.message.text
@@ -75,19 +38,28 @@ async def handle_tiktok(update, context):
     
     if tiktok_match:
         clean_url = tiktok_match.group(0)
-        msg = await update.message.reply_text("⏳ Extraction de la vidéo sans filigrane...")
+        msg = await update.message.reply_text("⏳ Téléchargement de la vidéo en cours sur le serveur...")
         
-        video_url = await download_tiktok_video(clean_url)
+        # Fichier temporaire
+        file_path = f"video_{update.message.message_id}.mp4"
         
-        if video_url:
-            await msg.edit_text("🚀 Envoi de la vidéo en cours...")
+        # Exécution du téléchargement dans un thread séparé
+        success = await asyncio.to_thread(download_tiktok_local, clean_url, file_path)
+        
+        if success:
+            await msg.edit_text("🚀 Envoi de la vidéo vers Telegram...")
             try:
-                await update.message.reply_video(video=video_url, caption="Voici votre vidéo sans filigrane ! 🎬")
+                with open(file_path, 'rb') as video_file:
+                    await update.message.reply_video(video=video_file, caption="Voici votre vidéo sans filigrane ! 🎬")
                 await msg.delete()
             except Exception as e:
-                await msg.edit_text(f"❌ Impossible d'envoyer le fichier vidéo : {e}")
+                await msg.edit_text(f"❌ Erreur lors de l'envoi du fichier : {e}")
+            finally:
+                # Nettoyage du fichier local
+                if os.path.exists(file_path):
+                    os.remove(file_path)
         else:
-            await msg.edit_text("❌ Impossible de récupérer la vidéo. Assurez-vous que la vidéo est publique.")
+            await msg.edit_text("❌ Impossible de télécharger la vidéo. Le lien est peut-être invalide ou la vidéo est privée.")
     else:
         await update.message.reply_text("Veuillez envoyer un lien TikTok valide.")
 
