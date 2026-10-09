@@ -1,10 +1,11 @@
 import os
 import logging
 import threading
+import asyncio
 from http.server import HTTPServer, BaseHTTPRequestHandler
-import requests
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+import yt_dlp
 
 TOKEN = os.environ.get("BOT_TOKEN", "8881509600:AAE1mehCUT2Op7G52iHiDrYBlH_2jLwM5Co")
 
@@ -13,7 +14,7 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# Serviteur HTTP minimaliste pour satisfaire la verification de port de Render
+# Serviteur HTTP minimaliste pour valider la vérification de port sur Render
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -25,55 +26,21 @@ def run_dummy_server():
     server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
     server.serve_forever()
 
-def resolve_url(url: str) -> str:
+def extract_tiktok_video_url(url: str) -> str:
+    """Utilise yt-dlp pour récupérer le lien MP4 direct sans watermark."""
+    ydl_opts = {
+        'format': 'best',
+        'quiet': True,
+        'no_warnings': True,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+    }
     try:
-        session = requests.Session()
-        session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
-        })
-        res = session.get(url, allow_redirects=True, timeout=10)
-        return res.url
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            return info.get('url')
     except Exception as e:
-        logging.error(f"Erreur resolution URL: {e}")
-        return url
-
-def get_video_url_tikwm(url: str):
-    try:
-        session = requests.Session()
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Referer': 'https://www.tikwm.com/'
-        }
-        res = session.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=10)
-        
-        if res.status_code == 200 and res.text.startswith('{'):
-            data = res.json()
-            if data.get("code") == 0:
-                play_url = data.get("data", {}).get("play")
-                if play_url and not play_url.startswith("http"):
-                    play_url = "https://www.tikwm.com" + play_url
-                return play_url
-    except Exception as e:
-        logging.error(f"Erreur TikWM: {e}")
-    return None
-
-def get_video_url_cobalt(url: str):
-    try:
-        headers = {
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-        payload = {"url": url, "noWatermark": True}
-        res = requests.post("https://api.cobalt.tools/api/json", json=payload, headers=headers, timeout=10)
-        if res.status_code == 200 and res.text.startswith('{'):
-            data = res.json()
-            if data.get("status") in ["stream", "redirect"]:
-                return data.get("url")
-    except Exception as e:
-        logging.error(f"Erreur Cobalt: {e}")
-    return None
+        logging.error(f"Erreur yt-dlp : {e}")
+        return None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -81,20 +48,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    raw_url = update.message.text.strip()
+    url = update.message.text.strip()
     
-    if "tiktok.com" not in raw_url:
+    if "tiktok.com" not in url:
         await update.message.reply_text("Please send a valid TikTok URL.")
         return
 
     status_msg = await update.message.reply_text("Downloading video, please wait...")
 
     try:
-        full_url = resolve_url(raw_url)
-        play_url = get_video_url_tikwm(full_url)
-        
-        if not play_url:
-            play_url = get_video_url_cobalt(full_url)
+        # Exécution de yt-dlp dans un thread séparé pour ne pas bloquer l'event loop
+        play_url = await asyncio.to_thread(extract_tiktok_video_url, url)
 
         if play_url:
             await update.message.reply_video(
@@ -111,7 +75,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_msg.edit_text("An error occurred while processing your request.")
 
 if __name__ == '__main__':
-    # Lancement du serveur Web factice dans un thread separe pour Render
+    # Serveur HTTP factice pour Render
     threading.Thread(target=run_dummy_server, daemon=True).start()
     
     app = ApplicationBuilder().token(TOKEN).build()
