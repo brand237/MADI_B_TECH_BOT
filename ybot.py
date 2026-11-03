@@ -42,7 +42,7 @@ def keep_alive():
 # Options yt-dlp optimisées avec le client mobile (mweb) pour les Shorts
 BASE_YDL_OPTS = {
     'noplaylist': True,
-    'socket_timeout': 30,
+    'socket_timeout': 60,
     'retries': 10,
     'extractor_args': {'youtube': {'player_client': ['mweb', 'android']}},
     'http_headers': {
@@ -96,58 +96,55 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["target_url"] = url
     await update.message.reply_text("🔍 Analyse des informations et des formats disponibles...")
 
+    # Valeurs par défaut au cas où l'extraction complète échouerait
+    title = "Vidéo YouTube / Short"
+    author = "Brandon Tech (MBT)"
+    description = "Aucune description disponible pour ce média."
+
     try:
         ydl_opts = {**BASE_YDL_OPTS, 'skip_download': True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
-            title = info.get('title', 'Titre inconnu')
-            author = info.get('uploader', 'Auteur inconnu')
-            description = info.get('description', 'Aucune description disponible.')
-            
+            title = info.get('title', title)
+            author = info.get('uploader', info.get('channel', author))
+            desc_raw = info.get('description', '')
+            if desc_raw:
+                description = desc_raw
+
             if len(description) > 300:
                 description = description[:300] + "..."
 
-        safe_title = title.replace('*', '').replace('_', '').replace('`', '')
-        safe_author = author.replace('*', '').replace('_', '').replace('`', '')
-
-        text_info = (
-            f"🎬 **Titre :** {safe_title}\n"
-            f"👤 **Auteur :** {safe_author}\n\n"
-            f"📝 **Description :**\n{description}\n\n"
-            f"🎯 **Choisissez votre format :**"
-        )
-
-        keyboard = [
-            [
-                InlineKeyboardButton("📹 Vidéo 720p", callback_data="vid_720"),
-                InlineKeyboardButton("📹 Vidéo 360p", callback_data="vid_360")
-            ],
-            [
-                InlineKeyboardButton("🎵 Audio MP3 (192 kbps)", callback_data="aud_192"),
-                InlineKeyboardButton("🎵 Audio MP3 (320 kbps)", callback_data="aud_320")
-            ],
-            [
-                InlineKeyboardButton("🖼️ Télécharger la miniature", callback_data="get_thumb")
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await update.message.reply_text(text_info, reply_markup=reply_markup, parse_mode="Markdown")
-
     except Exception as e:
-        logger.error(f"Erreur d'extraction : {e}")
-        keyboard = [
-            [
-                InlineKeyboardButton("📹 Vidéo 720p", callback_data="vid_720"),
-                InlineKeyboardButton("🎵 Audio MP3", callback_data="aud_192")
-            ],
-            [
-                InlineKeyboardButton("🖼️ Miniature", callback_data="get_thumb")
-            ]
+        logger.error(f"Erreur d'extraction (utilisation des valeurs par défaut) : {e}")
+
+    safe_title = str(title).replace('*', '').replace('_', '').replace('`', '')
+    safe_author = str(author).replace('*', '').replace('_', '').replace('`', '')
+    safe_desc = str(description).replace('*', '').replace('_', '').replace('`', '')
+
+    text_info = (
+        f"🎬 **Titre :** {safe_title}\n"
+        f"👤 **Auteur :** {safe_author}\n\n"
+        f"📝 **Description :**\n{safe_desc}\n\n"
+        f"🎯 **Choisissez votre format :**"
+    )
+
+    keyboard = [
+        [
+            InlineKeyboardButton("📹 Vidéo 720p", callback_data="vid_720"),
+            InlineKeyboardButton("📹 Vidéo 360p", callback_data="vid_360")
+        ],
+        [
+            InlineKeyboardButton("🎵 Audio MP3 (192 kbps)", callback_data="aud_192"),
+            InlineKeyboardButton("🎵 Audio MP3 (320 kbps)", callback_data="aud_320")
+        ],
+        [
+            InlineKeyboardButton("🖼️ Télécharger la miniature", callback_data="get_thumb")
         ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("🎯 Média détecté !\nChoisissez une option :", reply_markup=reply_markup)
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(text_info, reply_markup=reply_markup, parse_mode="Markdown")
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -240,7 +237,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         logger.error(f"Erreur de traitement : {e}")
-        await query.message.reply_text(f"❌ Une erreur est survenue : {str(e)}")
+        err_msg = str(e)
+        if "Timed out" in err_msg or "epoll" in err_msg:
+            pass
+        else:
+            await query.message.reply_text(f"❌ Une erreur est survenue : {err_msg}")
 
 def main():
     application = Application.builder().token(TOKEN).build()
