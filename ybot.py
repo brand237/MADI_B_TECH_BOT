@@ -39,14 +39,14 @@ def keep_alive():
     t.start()
 # -----------------------------------------------------------------
 
-# Options yt-dlp standard avec contournement anti-bot et User-Agent
+# Options yt-dlp optimisées avec le client mobile (mweb) pour les Shorts
 BASE_YDL_OPTS = {
     'noplaylist': True,
     'socket_timeout': 30,
     'retries': 10,
-    'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'web']}},
+    'extractor_args': {'youtube': {'player_client': ['mweb', 'android']}},
     'http_headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
         'Accept-Language': 'en-US,en;q=0.9',
     }
 }
