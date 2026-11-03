@@ -12,6 +12,7 @@ import threading
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Votre nouveau token mis à jour
 TOKEN = "9075133731:AAHVYpj8kOyB3HLr-MdEsYymp7-UoUAqM8M"
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 Mo (Limite Bot API Telegram standard)
 
@@ -70,7 +71,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     bot_stats["active_users"].add(user.id)
 
-    # Extraction propre de l'URL via Regex pour ignorer les textes superflus des messages transférés
+    # Extraction propre de l'URL via Regex
     url_match = re.search(r'(https?://[^\s]+)', text)
     if not url_match:
         await update.message.reply_text("❌ Veuillez envoyer un lien YouTube valide.")
@@ -87,7 +88,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         ydl_opts = {
             'skip_download': True,
-            'extractor_args': {'youtube': {'player_client': ['android', 'web']}}
+            'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'web']}}
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -158,7 +159,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("⏳ Récupération de la miniature...")
             ydl_opts = {
                 'skip_download': True,
-                'extractor_args': {'youtube': {'player_client': ['android', 'web']}}
+                'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'web']}}
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
@@ -181,7 +182,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 'noplaylist': True,
                 'socket_timeout': 30,
                 'retries': 10,
-                'extractor_args': {'youtube': {'player_client': ['android', 'web']}}
+                'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'web']}}
             }
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -215,7 +216,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 'noplaylist': True,
                 'socket_timeout': 30,
                 'retries': 10,
-                'extractor_args': {'youtube': {'player_client': ['android', 'web']}}
+                'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'web']}}
             }
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
