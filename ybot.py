@@ -10,7 +10,7 @@ import threading
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-TOKEN = "9075133731:AAHLJOXA0RVopiAgqz-_9rUkvY_7dsn03sg"
+TOKEN = "9075133731:AAHLJOXA0RVopiAgqz-_9rUkvY_7dsnO3sg"
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 Mo (Limite Bot API Telegram standard)
 
 # --- MINI SERVEUR FLASK POUR LE MAINTIEN EN VEILLE (KEEP-ALIVE) ---
@@ -112,7 +112,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ydl_opts = {
                 'format': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best',
                 'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'),
-                'noplaylist': False,
+                'noplaylist': True,  # Sécurité : Empêche de télécharger une playlist entière
                 'socket_timeout': 30,
                 'retries': 10,
                 'fragment_retries': 10,
@@ -120,26 +120,21 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
-                entries = info.get('entries', [info]) if 'entries' in info else [info]
+                filename = ydl.prepare_filename(info)
+                if not filename.endswith('.mp4'):
+                    filename = os.path.splitext(filename)[0] + '.mp4'
 
-                for entry in entries:
-                    if not entry:
-                        continue
-                    filename = ydl.prepare_filename(entry)
-                    if not filename.endswith('.mp4'):
-                        filename = os.path.splitext(filename)[0] + '.mp4'
-
-                    if os.path.exists(filename):
-                        file_size = os.path.getsize(filename)
-                        if file_size > MAX_FILE_SIZE:
-                            await query.message.reply_text(
-                                f"⚠️ Le fichier dépasse 50 Mo ({file_size // (1024*1024)} Mo). "
-                                "Impossible de l'envoyer directement via Telegram."
-                            )
-                        else:
-                            with open(filename, 'rb') as f:
-                                await query.message.reply_video(video=f)
-                        os.remove(filename)
+                if os.path.exists(filename):
+                    file_size = os.path.getsize(filename)
+                    if file_size > MAX_FILE_SIZE:
+                        await query.message.reply_text(
+                            f"⚠️ Le fichier dépasse 50 Mo ({file_size // (1024*1024)} Mo). "
+                            "Impossible de l'envoyer directement via Telegram."
+                        )
+                    else:
+                        with open(filename, 'rb') as f:
+                            await query.message.reply_video(video=f)
+                    os.remove(filename)
 
         elif choice == "format_audio":
             ydl_opts = {
@@ -150,7 +145,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     'preferredcodec': 'mp3',
                     'preferredquality': '192',
                 }],
-                'noplaylist': False,
+                'noplaylist': True,  # Sécurité : Empêche de télécharger une playlist entière
                 'socket_timeout': 30,
                 'retries': 10,
                 'fragment_retries': 10,
@@ -158,25 +153,20 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
-                entries = info.get('entries', [info]) if 'entries' in info else [info]
+                filename = ydl.prepare_filename(info)
+                filename = os.path.splitext(filename)[0] + ".mp3"
 
-                for entry in entries:
-                    if not entry:
-                        continue
-                    filename = ydl.prepare_filename(entry)
-                    filename = os.path.splitext(filename)[0] + ".mp3"
-
-                    if os.path.exists(filename):
-                        file_size = os.path.getsize(filename)
-                        if file_size > MAX_FILE_SIZE:
-                            await query.message.reply_text(
-                                f"⚠️ L'audio dépasse 50 Mo. "
-                                "Impossible de l'envoyer directement."
-                            )
-                        else:
-                            with open(filename, 'rb') as f:
-                                await query.message.reply_audio(audio=f)
-                        os.remove(filename)
+                if os.path.exists(filename):
+                    file_size = os.path.getsize(filename)
+                    if file_size > MAX_FILE_SIZE:
+                        await query.message.reply_text(
+                            f"⚠️ L'audio dépasse 50 Mo. "
+                            "Impossible de l'envoyer directement."
+                        )
+                    else:
+                        with open(filename, 'rb') as f:
+                            await query.message.reply_audio(audio=f)
+                    os.remove(filename)
 
         await query.message.reply_text("✅ Traitement terminé avec succès !")
 
