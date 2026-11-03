@@ -21,7 +21,6 @@ def home():
     return "Le bot Telegram de Brandon Tech est bien en ligne et actif !"
 
 def run_web():
-    # Render attribue dynamiquement un port via la variable d'environnement PORT, sinon on utilise le port 8080
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
@@ -161,4 +160,39 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 info = ydl.extract_info(url, download=True)
                 entries = info.get('entries', [info]) if 'entries' in info else [info]
 
-                for entry in
+                for entry in entries:
+                    if not entry:
+                        continue
+                    filename = ydl.prepare_filename(entry)
+                    filename = os.path.splitext(filename)[0] + ".mp3"
+
+                    if os.path.exists(filename):
+                        file_size = os.path.getsize(filename)
+                        if file_size > MAX_FILE_SIZE:
+                            await query.message.reply_text(
+                                f"⚠️ L'audio dépasse 50 Mo. "
+                                "Impossible de l'envoyer directement."
+                            )
+                        else:
+                            with open(filename, 'rb') as f:
+                                await query.message.reply_audio(audio=f)
+                        os.remove(filename)
+
+        await query.message.reply_text("✅ Traitement terminé avec succès !")
+
+    except Exception as e:
+        logger.error(f"Erreur de téléchargement : {e}")
+        await query.message.reply_text(f"❌ Une erreur est survenue : {str(e)}")
+
+def main():
+    application = Application.builder().token(TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
+    application.add_handler(CallbackQueryHandler(button_callback))
+
+    application.run_polling()
+
+if __name__ == "__main__":
+    keep_alive()
+    main()
