@@ -11,7 +11,7 @@ import threading
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-TOKEN = "9075133731:AAHLJOXA0RVopiAgqz-_9rUkvY_7dsn03sg"
+TOKEN = "9075133731:AAHLJOXA0RVopiAgqz-_9rUkvY_7dsnO3sg"
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 Mo (Limite Bot API Telegram standard)
 
 # Statistiques globales du bot (en mémoire)
