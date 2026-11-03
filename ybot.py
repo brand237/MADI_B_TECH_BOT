@@ -3,13 +3,33 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 import yt_dlp
+from flask import Flask
+import threading
 
 # Configuration des logs
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-TOKEN = "9075133731:AAHLJOXA0RVopiAgqz-_9rUkvY_7dsnO3sg"
+TOKEN = "9075133731:AAHLJOXA0RVopiAgqz-_9rUkvY_7dsn03sg"
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 Mo (Limite Bot API Telegram standard)
+
+# --- MINI SERVEUR FLASK POUR LE MAINTIEN EN VEILLE (KEEP-ALIVE) ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Le bot Telegram de Brandon Tech est bien en ligne et actif !"
+
+def run_web():
+    # Render attribue dynamiquement un port via la variable d'environnement PORT, sinon on utilise le port 8080
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = threading.Thread(target=run_web)
+    t.daemon = True
+    t.start()
+# -----------------------------------------------------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_message = (
@@ -26,13 +46,11 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Veuillez envoyer un lien YouTube valide.")
         return
 
-    # Stocker l'URL dans le context user
     context.user_data["target_url"] = url
 
     await update.message.reply_text("🔍 Analyse des informations de la vidéo...")
 
     try:
-        # Extraire uniquement les métadonnées sans télécharger
         ydl_opts = {'skip_download': True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -41,11 +59,9 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             author = info.get('uploader', 'Auteur inconnu')
             description = info.get('description', 'Aucune description disponible.')
             
-            # Tronquer la description si elle est trop longue pour Telegram (max ~350 caractères)
             if len(description) > 350:
                 description = description[:350] + "..."
 
-        # Nettoyer les caractères spéciaux pour éviter les erreurs de Markdown Telegram
         safe_title = title.replace('*', '').replace('_', '').replace('`', '')
         safe_author = author.replace('*', '').replace('_', '').replace('`', '')
 
@@ -68,7 +84,6 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         logger.error(f"Erreur d'extraction des métadonnées : {e}")
-        # En cas d'erreur d'extraction, on affiche quand même les boutons de secours
         keyboard = [
             [
                 InlineKeyboardButton("📹 Vidéo (MP4)", callback_data="format_video"),
@@ -146,38 +161,4 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 info = ydl.extract_info(url, download=True)
                 entries = info.get('entries', [info]) if 'entries' in info else [info]
 
-                for entry in entries:
-                    if not entry:
-                        continue
-                    filename = ydl.prepare_filename(entry)
-                    filename = os.path.splitext(filename)[0] + ".mp3"
-
-                    if os.path.exists(filename):
-                        file_size = os.path.getsize(filename)
-                        if file_size > MAX_FILE_SIZE:
-                            await query.message.reply_text(
-                                f"⚠️ L'audio dépasse 50 Mo. "
-                                "Impossible de l'envoyer directement."
-                            )
-                        else:
-                            with open(filename, 'rb') as f:
-                                await query.message.reply_audio(audio=f)
-                        os.remove(filename)
-
-        await query.message.reply_text("✅ Traitement terminé avec succès !")
-
-    except Exception as e:
-        logger.error(f"Erreur de téléchargement : {e}")
-        await query.message.reply_text(f"❌ Une erreur est survenue : {str(e)}")
-
-def main():
-    application = Application.builder().token(TOKEN).build()
-
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
-    application.add_handler(CallbackQueryHandler(button_callback))
-
-    application.run_polling()
-
-if __name__ == "__main__":
-    main()
+                for entry in

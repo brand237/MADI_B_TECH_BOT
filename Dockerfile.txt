@@ -1,0 +1,20 @@
+# Utiliser une image officielle Python légère
+FROM python:3.11-slim
+
+# Installer FFmpeg et les dépendances système nécessaires
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Définir le répertoire de travail dans le conteneur
+WORKDIR /app
+
+# Copier les fichiers de dépendances et installer les bibliothèques Python
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copier tout le reste du code source dans le conteneur
+COPY . .
+
+# Commande pour lancer le bot au démarrage du conteneur
+CMD ["python", "ybot.py"]
