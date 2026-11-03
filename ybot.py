@@ -12,7 +12,6 @@ import threading
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Votre nouveau token mis à jour
 TOKEN = "9075133731:AAHVYpj8kOyB3HLr-MdEsYymp7-UoUAqM8M"
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 Mo (Limite Bot API Telegram standard)
 
@@ -39,6 +38,18 @@ def keep_alive():
     t.daemon = True
     t.start()
 # -----------------------------------------------------------------
+
+# Options yt-dlp standard avec contournement anti-bot et User-Agent
+BASE_YDL_OPTS = {
+    'noplaylist': True,
+    'socket_timeout': 30,
+    'retries': 10,
+    'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'web']}},
+    'http_headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+    }
+}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -86,10 +97,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔍 Analyse des informations et des formats disponibles...")
 
     try:
-        ydl_opts = {
-            'skip_download': True,
-            'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'web']}}
-        }
+        ydl_opts = {**BASE_YDL_OPTS, 'skip_download': True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
@@ -157,10 +165,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if choice == "get_thumb":
             await query.edit_message_text("⏳ Récupération de la miniature...")
-            ydl_opts = {
-                'skip_download': True,
-                'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'web']}}
-            }
+            ydl_opts = {**BASE_YDL_OPTS, 'skip_download': True}
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 thumbnail_url = info.get('thumbnail')
@@ -177,12 +182,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if choice.startswith("vid_"):
             quality = "720" if "720" in choice else "360"
             ydl_opts = {
+                **BASE_YDL_OPTS,
                 'format': f'bestvideo[height<={quality}][ext=mp4]+bestaudio[ext=m4a]/best[height<={quality}][ext=mp4]/best',
                 'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'),
-                'noplaylist': True,
-                'socket_timeout': 30,
-                'retries': 10,
-                'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'web']}}
             }
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -206,6 +208,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif choice.startswith("aud_"):
             bitrate = "320" if "320" in choice else "192"
             ydl_opts = {
+                **BASE_YDL_OPTS,
                 'format': 'bestaudio/best',
                 'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'),
                 'postprocessors': [{
@@ -213,10 +216,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     'preferredcodec': 'mp3',
                     'preferredquality': bitrate,
                 }],
-                'noplaylist': True,
-                'socket_timeout': 30,
-                'retries': 10,
-                'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'web']}}
             }
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
